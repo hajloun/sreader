@@ -1,0 +1,11 @@
+speed-reader
+├── src
+│   ├── main.py
+│   ├── gui
+│   │   └── window.py
+│   ├── controllers
+│   │   └── speed_controller.py
+│   └── utils
+│       └── text_processor.py
+├── requirements.txt
+└── README.md
