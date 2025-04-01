@@ -1,3 +1,4 @@
+import tkinter as tk
 from tkinter import ttk
 from selenium.common import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
@@ -6,16 +7,21 @@ from selenium.webdriver.support import expected_conditions as EC
 import undetected_chromedriver as uc
 import time
 import traceback
+import threading
 
 def scrape_headway_book(email, password, book_url):
     """Scrape a book from Headway using provided credentials"""
     # Constants
     SUMMARY_CONTENT_SELECTOR = ".MuiStack-root.mui-style-mhauuz"
-    NEXT_PAGE_BUTTON_SELECTOR = "button[aria-label='Next page']"
+    NEXT_PAGE_BUTTON_SELECTOR = """
+        button.MuiButtonBase-root.MuiButton-root:has(svg path[d^="M16.6141 11"]),
+        button[class*="MuiButton-root"]:has(svg path[d^="M16.6141"])
+    """
     
     # Initialize variables for collecting text
     all_summary_text = []
     driver = None
+    page_count = 1
     
     try:
         # Configure Chrome options for headless mode
@@ -45,7 +51,6 @@ def scrape_headway_book(email, password, book_url):
         email_input.click()
         email_input.clear()
         time.sleep(0.5)
-        # Use JS for more reliable input
         driver.execute_script(f"arguments[0].value = '{email}'", email_input)
         driver.execute_script("arguments[0].dispatchEvent(new Event('input', { bubbles: true }))", email_input)
         driver.execute_script("arguments[0].dispatchEvent(new Event('change', { bubbles: true }))", email_input)
@@ -89,199 +94,112 @@ def scrape_headway_book(email, password, book_url):
         )
         time.sleep(3)  # Wait for any redirects
 
-        # Navigate to book URL
-        print("Navigating to book...")
-        driver.get(book_url)
-        time.sleep(3)  # Wait for book page to load
-        
-        # Initialize page counter
-        page_count = 1
+        # Navigate to book URL with retry mechanism
+        print("Loading book...")
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                driver.get(book_url)
+                time.sleep(5)  # Increased wait time for book loading
+                
+                # Verify we're on the correct page
+                current_url = driver.current_url
+                if "/summary" not in current_url:
+                    print(f"Unexpected URL: {current_url}, retrying...")
+                    continue
+                
+                # Wait for initial content
+                content = WebDriverWait(driver, 20).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, SUMMARY_CONTENT_SELECTOR))
+                )
+                if content.is_displayed() and content.text.strip():
+                    print("Book content loaded successfully")
+                    break
+            except Exception as e:
+                print(f"Attempt {attempt + 1} failed: {str(e)}")
+                if attempt == max_retries - 1:
+                    raise Exception("Failed to load book content")
+                time.sleep(2)
 
-        # Loop through pages
+        # Scraping loop with improved navigation
         while True:
             print(f"Processing page {page_count}...")
             try:
-                # Wait for content
-                content_element = WebDriverWait(driver, 20).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, SUMMARY_CONTENT_SELECTOR))
-                )
+                # Try multiple selectors for content
+                content_found = False
+                for selector in [SUMMARY_CONTENT_SELECTOR, 
+                               ".MuiStack-root", 
+                               "div[class*='book-content']"]:
+                    try:
+                        content_element = WebDriverWait(driver, 15).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                        )
+                        if content_element.is_displayed():
+                            page_text = content_element.text.strip()
+                            if page_text:
+                                all_summary_text.append(page_text)
+                                print(f"Content found on page {page_count}")
+                                content_found = True
+                                break
+                    except:
+                        continue
+
+                if not content_found:
+                    raise Exception("No content found on current page")
+
+                # Look for next button with improved detection
+                next_buttons = driver.find_elements(By.CSS_SELECTOR, NEXT_PAGE_BUTTON_SELECTOR)
+                next_button = None
                 
-                # Get text from page
-                page_text = content_element.text
-                if page_text:
-                    all_summary_text.append(page_text)
-                    print(f"Added content from page {page_count}")
+                for btn in next_buttons:
+                    if btn.is_displayed():
+                        is_disabled = driver.execute_script("""
+                            return arguments[0].disabled || 
+                                   arguments[0].classList.contains('Mui-disabled') ||
+                                   !arguments[0].offsetParent;
+                        """, btn)
+                        if not is_disabled:
+                            next_button = btn
+                            break
 
-                # Look for next button with increased wait time
-                print("Looking for next page button...")
-                next_button = WebDriverWait(driver, 25).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, NEXT_PAGE_BUTTON_SELECTOR))
-                )
-
-                # Check if button is enabled
-                is_button_enabled = driver.execute_script(
-                    "return !arguments[0].hasAttribute('disabled')",
-                    next_button
-                )
-                is_mui_disabled = driver.execute_script(
-                    "return arguments[0].classList.contains('Mui-disabled')",
-                    next_button
-                )
-
-                if not is_button_enabled or is_mui_disabled:
-                    print("Next button is disabled. Reached last page.")
+                if not next_button:
+                    print("No active next button found - reached last page")
                     break
 
-                # Click next button with delay
-                time.sleep(1)
-                driver.execute_script("arguments[0].click();", next_button)
-                time.sleep(2)
-                page_count += 1
+                # Click next button with verification
+                print("Moving to next page...")
+                current_url = driver.current_url
+                
+                try:
+                    driver.execute_script("arguments[0].click();", next_button)
+                    # Wait for URL or content change
+                    WebDriverWait(driver, 10).until(lambda d: (
+                        d.current_url != current_url or
+                        d.find_element(By.CSS_SELECTOR, SUMMARY_CONTENT_SELECTOR).text != page_text
+                    ))
+                    time.sleep(2)  # Additional wait for content load
+                    page_count += 1
+                except:
+                    print("Page transition failed - reached last page")
+                    break
 
-            except TimeoutException:
-                print("No more pages found.")
-                break
             except Exception as e:
-                print(f"Error processing page: {str(e)}")
-                traceback.print_exc()
+                print(f"Error on page {page_count}: {str(e)}")
+                if page_count == 1:
+                    raise
                 break
 
-        # Combine all text
-        print("Finishing up...")
         if not all_summary_text:
             raise Exception("No content was scraped")
-        return "\n\n".join(all_summary_text)
+
+        print(f"Successfully scraped {page_count} pages")
+        return "\n\n".join(all_summary_text)  # Simplified join without page break markers
 
     except Exception as e:
-        print(f"Error during scraping: {str(e)}")
+        print(f"Error: {str(e)}")
         traceback.print_exc()
-        raise Exception(f"Failed to scrape book: {str(e)}")
+        raise
 
     finally:
         if driver:
-            try:
-                driver.quit()
-                print("Browser closed successfully.")
-            except Exception as e:
-                print(f"Error closing browser: {str(e)}")
-
-class SpeedReaderApp:
-
-    def update_display(self, word):
-        self.display_label.config(text=word)
-        self.root.update()
-
-    def start_reading(self):
-        text = self.text_input.get("1.0", tk.END)
-        self.text_processor.set_text(text)
-        try:
-            speed_wpm = int(self.speed_var.get())
-            speed_ms = int(60000 / speed_wpm)
-            self.speed_controller.set_speed(speed_ms)
-            self.speed_controller.start_reading()
-            self.start_button['state'] = 'disabled'
-            self.pause_button['state'] = 'normal'
-        except ValueError:
-            self.display_label.config(text="Please enter a valid speed")
-
-    def pause_reading(self):
-        self.speed_controller.stop_reading()
-        self.start_button['state'] = 'normal'
-        self.pause_button['state'] = 'disabled'
-        self.paused = True
-
-    def toggle_text(self):
-        if hasattr(self.text_container, '_is_hidden') and not self.text_container._is_hidden:
-            self.text_container.pack_forget()
-            self.text_container._is_hidden = True
-        else:
-            self.text_container.pack(after=self.title_label)
-            self.text_container._is_hidden = False
-
-    def toggle_theme(self):
-        self.dark_mode = not self.dark_mode
-        self.apply_theme()
-
-    def show_headway_inputs(self):
-        if not hasattr(self, 'headway_frame'):
-            # Create headway input frame
-            self.headway_frame = ttk.Frame(self.root)
-            
-            # Email input
-            ttk.Label(self.headway_frame, text="Email:").pack(pady=5)
-            self.email_var = tk.StringVar()
-            ttk.Entry(self.headway_frame, textvariable=self.email_var, width=40).pack()
-            
-            # Password input
-            ttk.Label(self.headway_frame, text="Password:").pack(pady=5)
-            self.password_var = tk.StringVar()
-            password_entry = ttk.Entry(self.headway_frame, textvariable=self.password_var, show="*", width=40)
-            password_entry.pack()
-            
-            # Book URL input
-            ttk.Label(self.headway_frame, text="Book URL:").pack(pady=5)
-            self.book_url_var = tk.StringVar()
-            ttk.Entry(self.headway_frame, textvariable=self.book_url_var, width=40).pack()
-            
-            # Send button
-            ttk.Button(self.headway_frame, text="Send",
-                       command=self.scrape_and_load_book,
-                       style='Controls.TButton').pack(pady=20)
-        
-        if hasattr(self.headway_frame, '_is_hidden') and not self.headway_frame._is_hidden:
-            self.headway_frame.pack_forget()
-            self.headway_frame._is_hidden = True
-        else:
-            self.headway_frame.pack(after=self.title_label, pady=20)
-            self.headway_frame._is_hidden = False
-
-    def scrape_and_load_book(self):
-        self.display_label.config(text="Scraping book... Please wait...")
-        
-        # Disable inputs while scraping
-        for child in self.headway_frame.winfo_children():
-            if isinstance(child, ttk.Entry) or isinstance(child, ttk.Button):
-                child['state'] = 'disabled'
-        
-        # Show loading message
-        self.display_label.config(text="Scraping book...")
-        
-        # Start scraping in a separate thread
-        def scrape_thread():
-            try:
-                # Get the scraped text
-                scraped_text = scrape_headway_book(
-                    self.email_var.get(),
-                    self.password_var.get(),
-                    self.book_url_var.get()
-                )
-                
-                # Update the text input with scraped content
-                self.text_input.delete('1.0', tk.END)
-                self.text_input.insert('1.0', scraped_text)
-                
-                # Hide the headway frame
-                self.headway_frame.pack_forget()
-                self.headway_frame._is_hidden = True
-                
-                # Show success message
-                self.display_label.config(text="Book loaded successfully!")
-            
-            except Exception as e:
-                self.display_label.config(text=f"Error: {str(e)}")
-            
-            finally:
-                # Re-enable inputs
-                for child in self.headway_frame.winfo_children():
-                    if isinstance(child, ttk.Entry) or isinstance(child, ttk.Button):
-                        child['state'] = 'normal'
-        
-        threading.Thread(target=scrape_thread, daemon=True).start()
-
-def main():
-    root = tk.Tk()
-    app = SpeedReaderApp(root)
-    root.mainloop()
-
-if __name__ == "__main__":
-    main()
+            driver.quit()
