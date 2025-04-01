@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext
 from controllers.speed_controller import SpeedController
 from utils.text_processor import TextProcessor
+from utils.scrape import scrape_headway_book  # We'll create this function
+import threading
 
 class SpeedReaderApp:
     def __init__(self, root):
@@ -83,6 +85,9 @@ class SpeedReaderApp:
         
         ttk.Button(button_frame, text="Toggle Text", style='Controls.TButton',
                   command=self.toggle_text).pack(side='left', padx=10)
+        
+        ttk.Button(button_frame, text="Headway", style='Controls.TButton',
+                  command=self.show_headway_inputs).pack(side='left', padx=10)
         
         ttk.Button(button_frame, text="Toggle Theme", style='Controls.TButton',
                   command=self.toggle_theme).pack(side='left', padx=10)
@@ -210,6 +215,80 @@ class SpeedReaderApp:
         self.dark_mode = not self.dark_mode
         self.apply_theme()
         
+    def show_headway_inputs(self):
+        if not hasattr(self, 'headway_frame'):
+            # Create headway input frame
+            self.headway_frame = ttk.Frame(self.root)
+            
+            # Email input
+            ttk.Label(self.headway_frame, text="Email:").pack(pady=5)
+            self.email_var = tk.StringVar()
+            ttk.Entry(self.headway_frame, textvariable=self.email_var, width=40).pack()
+            
+            # Password input
+            ttk.Label(self.headway_frame, text="Password:").pack(pady=5)
+            self.password_var = tk.StringVar()
+            password_entry = ttk.Entry(self.headway_frame, textvariable=self.password_var, show="*", width=40)
+            password_entry.pack()
+            
+            # Book URL input
+            ttk.Label(self.headway_frame, text="Book URL:").pack(pady=5)
+            self.book_url_var = tk.StringVar()
+            ttk.Entry(self.headway_frame, textvariable=self.book_url_var, width=40).pack()
+            
+            # Send button
+            ttk.Button(self.headway_frame, text="Send", 
+                      command=self.scrape_and_load_book, 
+                      style='Controls.TButton').pack(pady=20)
+            
+        if hasattr(self.headway_frame, '_is_hidden') and not self.headway_frame._is_hidden:
+            self.headway_frame.pack_forget()
+            self.headway_frame._is_hidden = True
+        else:
+            self.headway_frame.pack(after=self.title_label, pady=20)
+            self.headway_frame._is_hidden = False
+
+    def scrape_and_load_book(self):
+        # Disable inputs while scraping
+        for child in self.headway_frame.winfo_children():
+            if isinstance(child, ttk.Entry) or isinstance(child, ttk.Button):
+                child['state'] = 'disabled'
+        
+        # Show loading message
+        self.display_label.config(text="Scraping book...")
+        
+        # Start scraping in a separate thread
+        def scrape_thread():
+            try:
+                # Get the scraped text
+                scraped_text = scrape_headway_book(
+                    self.email_var.get(),
+                    self.password_var.get(),
+                    self.book_url_var.get()
+                )
+                
+                # Update the text input with scraped content
+                self.text_input.delete('1.0', tk.END)
+                self.text_input.insert('1.0', scraped_text)
+                
+                # Hide the headway frame
+                self.headway_frame.pack_forget()
+                self.headway_frame._is_hidden = True
+                
+                # Show success message
+                self.display_label.config(text="Book loaded successfully!")
+                
+            except Exception as e:
+                self.display_label.config(text=f"Error: {str(e)}")
+                
+            finally:
+                # Re-enable inputs
+                for child in self.headway_frame.winfo_children():
+                    if isinstance(child, ttk.Entry) or isinstance(child, ttk.Button):
+                        child['state'] = 'normal'
+        
+        threading.Thread(target=scrape_thread, daemon=True).start()
+
 def main():
     root = tk.Tk()
     app = SpeedReaderApp(root)
