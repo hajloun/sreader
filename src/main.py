@@ -17,13 +17,13 @@ class SpeedReaderApp:
         self.style.configure('Controls.TButton', 
             font=('Segoe UI', 11, 'bold'),
             padding=(25, 12),
-            background='#2962ff',  # Modern blue
+            background='#ffffff',  # Modern blue
             foreground='white',
             borderwidth=0,
             relief='flat'
         )
         self.style.map('Controls.TButton',
-            background=[('active', '#1e88e5'), ('disabled', '#90a4ae')],
+            background=[('active', '#ffffff'), ('disabled', '#90a4ae')],
             foreground=[('disabled', '#eceff1')],
             relief=[('pressed', 'flat'), ('!pressed', 'flat')]
         )
@@ -65,7 +65,7 @@ class SpeedReaderApp:
         speed_frame.pack(pady=20)
         
         ttk.Label(speed_frame, text="WPM:", font=('Helvetica', 12)).pack(side='left', padx=5)
-        self.speed_var = tk.StringVar(value="200")
+        self.speed_var = tk.StringVar(value="400")
         speed_entry = ttk.Entry(speed_frame, textvariable=self.speed_var, width=6, 
                               font=('Helvetica', 12))
         speed_entry.pack(side='left', padx=5)
@@ -74,53 +74,64 @@ class SpeedReaderApp:
         button_frame = ttk.Frame(container)
         button_frame.pack(pady=30)
         
-        self.start_button = ttk.Button(button_frame, text="Start", style='Start.TButton',
-                                     command=self.start_reading)
-        self.start_button.pack(side='left', padx=10)
+        self.start_stop_button = ttk.Button(button_frame, text="Start", 
+                                          style='Start.TButton',
+                                          command=self.toggle_reading)
+        self.start_stop_button.pack(side='left', padx=10)
         
-        self.pause_button = ttk.Button(button_frame, text="Pause", style='Stop.TButton',
-                                     command=self.pause_reading)
-        self.pause_button.pack(side='left', padx=10)
-        self.pause_button['state'] = 'disabled'
-        
-        ttk.Button(button_frame, text="Toggle Text", style='Controls.TButton',
+        ttk.Button(button_frame, text="Toggle Text", 
+                  style='Controls.TButton',
                   command=self.toggle_text).pack(side='left', padx=10)
         
-        ttk.Button(button_frame, text="Headway", style='Controls.TButton',
+        ttk.Button(button_frame, text="Headway", 
+                  style='Controls.TButton',
                   command=self.show_headway_inputs).pack(side='left', padx=10)
         
-        ttk.Button(button_frame, text="Toggle Theme", style='Controls.TButton',
+        ttk.Button(button_frame, text="Toggle Theme", 
+                  style='Controls.TButton',
                   command=self.toggle_theme).pack(side='left', padx=10)
         
         # Initialize components
         self.text_processor = TextProcessor()
         self.speed_controller = SpeedController(self.text_processor, self.update_display)
         self.dark_mode = False
+        self.theme_mode = 0  # 0: light, 1: dark, 2: custom
         self.paused = False
         
         # Set initial theme
         self.apply_theme()
     
     def apply_theme(self):
-        if self.dark_mode:
-            bg_color = '#1a1a1a'  # Dark background
-            fg_color = '#ffffff'  # White text
-            accent_color = '#2962ff'  # Blue accent
-            secondary_bg = '#2d2d2d'  # Darker background for text input
-            button_bg = '#3d3d3d'  # Slightly lighter dark gray buttons for better contrast
-            button_fg = '#2d2d2d'  # White text for buttons
-            start_btn_color = '#2962ff'  # Blue color for Start button
-            stop_btn_color = '#e53935'  # Red color for Stop/Pause button
-        else:
-            # Light mode settings remain unchanged
-            bg_color = '#ffffff'  # Light background
-            fg_color = '#2d2d2d'  # Dark text
-            accent_color = '#2962ff'  # Blue accent
-            secondary_bg = '#f5f5f5'  # Light gray for text input
-            button_bg = '#e0e0e0'  # Light gray buttons
-            button_fg = '#2d2d2d'  # Dark text for buttons
-            start_btn_color = '#e0e0e0'  # Light gray for Start
-            stop_btn_color = '#e0e0e0'  # Light gray for Stop
+        if self.theme_mode == 0:  # Light theme
+            bg_color = '#ffffff'
+            fg_color_input = '#2d2d2d'
+            fg_color = '#2d2d2d'
+            accent_color = '#b3d0ff'
+            secondary_bg = '#f5f5f5'
+            button_bg = '#e0e0e0'
+            button_fg = '#2d2d2d'
+            start_btn_color = '#e0e0e0'
+            stop_btn_color = '#e0e0e0'
+        elif self.theme_mode == 1:  # Dark theme
+            bg_color = '#1a1a1a'
+            fg_color_input = '#ffffff'
+            fg_color = '#ffffff'
+            accent_color = '#b3d0ff'
+            secondary_bg = '#2d2d2d'
+            button_bg = '#3d3d3d'
+            button_fg = '#3d3d3d'
+            start_btn_color = '#ffffff'
+            stop_btn_color = '#ffffff'
+        else:  # Custom theme (beige/brown)
+            bg_color = '#f0dec6'
+            fg_color_input = '#9a866d'
+            fg_color = '#9a866d'
+            accent_color = '#ffffff'
+            secondary_bg = '#f0dec6'
+            button_bg = '#9a866d'
+            button_fg = '#9a866d'
+            start_btn_color = '#9a866d'
+            stop_btn_color = '#9a866d'
 
         # Set background and text colors
         self.root.configure(bg=bg_color)
@@ -141,7 +152,7 @@ class SpeedReaderApp:
             font=('Segoe UI', 11, 'bold'),
             padding=(15, 10),
             background=start_btn_color,
-            foreground=button_fg,  # Match other buttons
+            foreground=button_fg,
             borderwidth=0,
             relief='flat'
         )
@@ -149,59 +160,57 @@ class SpeedReaderApp:
             font=('Segoe UI', 11, 'bold'),
             padding=(15, 10),
             background=stop_btn_color,
-            foreground=button_fg,  # Match other buttons
+            foreground=button_fg,
             borderwidth=0,
             relief='flat'
         )
 
         # Configure button hover effects
+        hover_bg = accent_color if self.theme_mode != 2 else '#b3a18a'  # Lighter brown for custom theme
         self.style.map('Controls.TButton',
-            background=[('active', accent_color), ('disabled', button_bg)],
+            background=[('active', hover_bg), ('disabled', button_bg)],
             foreground=[('disabled', '#aaaaaa')]
         )
         self.style.map('Start.TButton',
-            background=[('active', '#555555'), ('disabled', '#90a4ae')],
+            background=[('active', hover_bg), ('disabled', '#90a4ae')],
             foreground=[('disabled', '#aaaaaa')]
         )
         self.style.map('Stop.TButton',
-            background=[('active', '#555555'), ('disabled', '#90a4ae')],
+            background=[('active', hover_bg), ('disabled', '#90a4ae')],
             foreground=[('disabled', '#aaaaaa')]
         )
 
         # Configure text input
         self.text_input.configure(
             bg=secondary_bg,
-            fg=fg_color,
+            fg=fg_color_input,
             insertbackground=fg_color,
             selectbackground=accent_color,
-            selectforeground='white'
+            selectforeground=button_fg
         )
 
     def update_display(self, word):
         self.display_label.config(text=word)
         self.root.update()
         
-    def start_reading(self):
-        text = self.text_input.get("1.0", tk.END)
-        self.text_processor.set_text(text)
-        
-        try:
-            speed_wpm = int(self.speed_var.get())
-            speed_ms = int(60000 / speed_wpm)
-            self.speed_controller.set_speed(speed_ms)
-            self.speed_controller.start_reading()
+    def toggle_reading(self):
+        if self.start_stop_button['text'] == 'Start':
+            # Start reading
+            text = self.text_input.get("1.0", tk.END)
+            self.text_processor.set_text(text)
             
-            self.start_button['state'] = 'disabled'
-            self.pause_button['state'] = 'normal'
-        except ValueError:
-            # Handle invalid speed input
-            self.display_label.config(text="Please enter a valid speed")
-        
-    def pause_reading(self):
-        self.speed_controller.stop_reading()
-        self.start_button['state'] = 'normal'
-        self.pause_button['state'] = 'disabled'
-        self.paused = True
+            try:
+                speed_wpm = int(self.speed_var.get())
+                speed_ms = int(60000 / speed_wpm)
+                self.speed_controller.set_speed(speed_ms)
+                self.speed_controller.start_reading()
+                self.start_stop_button.configure(text='Stop', style='Stop.TButton')
+            except ValueError:
+                self.display_label.config(text="Please enter a valid speed")
+        else:
+            # Stop reading
+            self.speed_controller.stop_reading()
+            self.start_stop_button.configure(text='Start', style='Start.TButton')
         
     def toggle_text(self):
         if hasattr(self.text_container, '_is_hidden') and not self.text_container._is_hidden:
@@ -212,7 +221,7 @@ class SpeedReaderApp:
             self.text_container._is_hidden = False
             
     def toggle_theme(self):
-        self.dark_mode = not self.dark_mode
+        self.theme_mode = (self.theme_mode + 1) % 3  # Cycle through 3 themes
         self.apply_theme()
         
     def show_headway_inputs(self):
