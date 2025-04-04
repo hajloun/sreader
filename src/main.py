@@ -34,13 +34,13 @@ class SpeedReaderApp:
         
         # Create centered container
         container = ttk.Frame(root)
-        container.place(relx=0.5, rely=0.5, anchor='center')
+        container.place(rely=0.5, relx=0.5, anchor='center')
         
         # Title
         self.title_label = ttk.Label(container, text="Speed Reader", style='Title.TLabel')
         self.title_label.pack(pady=(0, 40))
         
-        # Text input container (initially hidden)
+        # Text input container
         self.text_container = ttk.Frame(container)
         self.text_input = scrolledtext.ScrolledText(
             self.text_container, 
@@ -51,7 +51,7 @@ class SpeedReaderApp:
             relief='solid'
         )
         self.text_input.pack(pady=20)
-        self.text_container.pack()  # Changed from pack_forget() to show initially
+        self.text_container.pack()
         
         # Display area
         display_frame = ttk.Frame(container, style='Speed.TFrame')
@@ -60,36 +60,50 @@ class SpeedReaderApp:
         self.display_label = ttk.Label(display_frame, text="Ready to start", style='Reader.TLabel')
         self.display_label.pack(pady=40)
         
-        # Speed control
-        speed_frame = ttk.Frame(container)
-        speed_frame.pack(pady=20)
+        # Bottom control panel
+        self.bottom_panel = ttk.Frame(root)  # Make it instance variable
+        self.bottom_panel.pack(side='bottom', fill='x', pady=20)
         
-        ttk.Label(speed_frame, text="WPM:", font=('Helvetica', 12)).pack(side='left', padx=5)
+        # Left side - Speed controls
+        self.speed_frame = ttk.Frame(self.bottom_panel)  # Make it instance variable
+        self.speed_frame.pack(side='left', padx=20)
+        
+        ttk.Label(self.speed_frame, text="WPM:", font=('Helvetica', 12)).pack(side='left', padx=5)
         self.speed_var = tk.StringVar(value="400")
-        speed_entry = ttk.Entry(speed_frame, textvariable=self.speed_var, width=6, 
+        speed_entry = ttk.Entry(self.speed_frame, textvariable=self.speed_var, width=6, 
                               font=('Helvetica', 12))
         speed_entry.pack(side='left', padx=5)
         
-        # Control buttons
-        button_frame = ttk.Frame(container)
-        button_frame.pack(pady=30)
+        # Center - Control buttons
+        self.button_frame = ttk.Frame(self.bottom_panel)  # Make it instance variable
+        self.button_frame.pack(side='left', padx=20)
         
-        self.start_stop_button = ttk.Button(button_frame, text="Start", 
+        self.start_stop_button = ttk.Button(self.button_frame, text="Start", 
                                           style='Start.TButton',
                                           command=self.toggle_reading)
         self.start_stop_button.pack(side='left', padx=10)
         
-        ttk.Button(button_frame, text="Toggle Text", 
+        ttk.Button(self.button_frame, text="Toggle Text", 
                   style='Controls.TButton',
                   command=self.toggle_text).pack(side='left', padx=10)
         
-        ttk.Button(button_frame, text="Headway", 
+        ttk.Button(self.button_frame, text="Headway", 
                   style='Controls.TButton',
                   command=self.show_headway_inputs).pack(side='left', padx=10)
         
-        ttk.Button(button_frame, text="Toggle Theme", 
+        ttk.Button(self.button_frame, text="Toggle Theme", 
                   style='Controls.TButton',
                   command=self.toggle_theme).pack(side='left', padx=10)
+
+        # Right side - Toggle Controls button
+        toggle_controls_frame = ttk.Frame(self.bottom_panel)
+        toggle_controls_frame.pack(side='right', padx=20)
+        
+        self.toggle_controls_button = ttk.Button(toggle_controls_frame, 
+                                               text="Hide Controls", 
+                                               style='Controls.TButton',
+                                               command=self.toggle_controls)
+        self.toggle_controls_button.pack()
         
         # Initialize components
         self.text_processor = TextProcessor()
@@ -100,7 +114,12 @@ class SpeedReaderApp:
         
         # Set initial theme
         self.apply_theme()
-    
+        
+        # Add key bindings
+        self.root.bind('<s>', lambda e: self.toggle_reading())  # Space to toggle reading
+        self.root.bind('<h>', lambda e: self.toggle_controls())     # 'h' key to hide/show controls
+        self.root.bind('<t>', lambda e: self.toggle_theme())         # 't' key to toggle text
+        self.root.bind('<a>', lambda e: self.toggle_text())  # 'c' key to toggle controls
     def apply_theme(self):
         if self.theme_mode == 0:  # Light theme
             bg_color = '#ffffff'
@@ -229,18 +248,18 @@ class SpeedReaderApp:
             # Create headway input frame
             self.headway_frame = ttk.Frame(self.root)
             
-            # Email input
+            # Email input with pre-filled value
             ttk.Label(self.headway_frame, text="Email:").pack(pady=5)
-            self.email_var = tk.StringVar()
+            self.email_var = tk.StringVar(value="hhh.honzula@gmail.com")  # Pre-fill email
             ttk.Entry(self.headway_frame, textvariable=self.email_var, width=40).pack()
             
-            # Password input
+            # Password input with pre-filled value
             ttk.Label(self.headway_frame, text="Password:").pack(pady=5)
-            self.password_var = tk.StringVar()
+            self.password_var = tk.StringVar(value="pw.")  # Pre-fill password
             password_entry = ttk.Entry(self.headway_frame, textvariable=self.password_var, show="*", width=40)
             password_entry.pack()
             
-            # Book URL input
+            # Book URL input (left empty for pasting)
             ttk.Label(self.headway_frame, text="Book URL:").pack(pady=5)
             self.book_url_var = tk.StringVar()
             ttk.Entry(self.headway_frame, textvariable=self.book_url_var, width=40).pack()
@@ -297,6 +316,22 @@ class SpeedReaderApp:
                         child['state'] = 'normal'
         
         threading.Thread(target=scrape_thread, daemon=True).start()
+
+    def toggle_controls(self):
+        if hasattr(self.speed_frame, '_is_hidden') and not self.speed_frame._is_hidden:
+            # Hide controls
+            self.speed_frame.pack_forget()
+            self.button_frame.pack_forget()
+            self.speed_frame._is_hidden = True
+            self.button_frame._is_hidden = True
+            self.toggle_controls_button.configure(text="Show Controls")
+        else:
+            # Show controls
+            self.speed_frame.pack(side='left', padx=20)
+            self.button_frame.pack(side='left', padx=20)
+            self.speed_frame._is_hidden = False
+            self.button_frame._is_hidden = False
+            self.toggle_controls_button.configure(text="Hide Controls")
 
 def main():
     root = tk.Tk()
