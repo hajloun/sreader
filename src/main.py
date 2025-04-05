@@ -1,9 +1,13 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext
+from tkinter import filedialog
 from controllers.speed_controller import SpeedController
 from utils.text_processor import TextProcessor
 from utils.scrape import scrape_headway_book  # We'll create this function
 import threading
+import json
+from pathlib import Path
+import time
 
 class SpeedReaderApp:
     def __init__(self, root):
@@ -90,6 +94,9 @@ class SpeedReaderApp:
         ttk.Button(self.button_frame, text="Headway", 
                   style='Controls.TButton',
                   command=self.show_headway_inputs).pack(side='left', padx=10)
+        ttk.Button(self.button_frame, text="Load Book", 
+                  style='Controls.TButton',
+                  command=self.load_book_from_file).pack(side='left', padx=10)
         
         ttk.Button(self.button_frame, text="Toggle Theme", 
                   style='Controls.TButton',
@@ -111,6 +118,14 @@ class SpeedReaderApp:
         self.dark_mode = False
         self.theme_mode = 0  # 0: light, 1: dark, 2: custom
         self.paused = False
+        
+        # Add these new instance variables
+        self.current_file_path = None
+        self.saves_dir = Path("saves")
+        self.saves_dir.mkdir(exist_ok=True)
+        
+        # Add window close handler
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # Set initial theme
         self.apply_theme()
@@ -255,7 +270,7 @@ class SpeedReaderApp:
             
             # Password input with pre-filled value
             ttk.Label(self.headway_frame, text="Password:").pack(pady=5)
-            self.password_var = tk.StringVar(value="pw.")  # Pre-fill password
+            self.password_var = tk.StringVar(value="")  # Pre-fill password
             password_entry = ttk.Entry(self.headway_frame, textvariable=self.password_var, show="*", width=40)
             password_entry.pack()
             
@@ -295,7 +310,19 @@ class SpeedReaderApp:
                     self.book_url_var.get()
                 )
                 
-                # Update the text input with scraped content
+                # Create a filename from the URL
+                book_name = self.book_url_var.get().split('/')[-2]  # Get book name from URL
+                file_path = Path("books") / f"{book_name}.txt"
+                
+                # Create books directory if it doesn't exist
+                file_path.parent.mkdir(exist_ok=True)
+                
+                # Save scraped text to file
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(scraped_text)
+                
+                # Load the saved file using existing load_book_from_file functionality
+                self.current_file_path = str(file_path)
                 self.text_input.delete('1.0', tk.END)
                 self.text_input.insert('1.0', scraped_text)
                 
@@ -304,7 +331,7 @@ class SpeedReaderApp:
                 self.headway_frame._is_hidden = True
                 
                 # Show success message
-                self.display_label.config(text="Book loaded successfully!")
+                self.display_label.config(text=f"Book saved as {file_path.name} and loaded!")
                 
             except Exception as e:
                 self.display_label.config(text=f"Error: {str(e)}")
@@ -332,6 +359,76 @@ class SpeedReaderApp:
             self.speed_frame._is_hidden = False
             self.button_frame._is_hidden = False
             self.toggle_controls_button.configure(text="Hide Controls")
+
+    def load_book_from_file(self):
+        """Open file dialog and load text file content into the reader"""
+        file_path = filedialog.askopenfilename(
+            title="Select a book file",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+        )
+        
+        if file_path:
+            try:
+                self.current_file_path = file_path
+                save_file = self.saves_dir / f"{Path(file_path).stem}_save.json"
+                
+                # Check if we have a save file
+                if save_file.exists():
+                    with open(save_file, 'r', encoding='utf-8') as f:
+                        save_data = json.load(f)
+                        position = save_data.get('position', 0)
+                        
+                        # Load the full file
+                        with open(file_path, 'r', encoding='utf-8') as book_file:
+                            content = book_file.read()
+                        
+                        # Ask user if they want to continue from saved position
+                        if position > 0:
+                            if tk.messagebox.askyesno("Resume Reading", 
+                                "Would you like to continue from where you left off?"):
+                                # Set the content and position
+                                self.text_input.delete('1.0', tk.END)
+                                self.text_input.insert('1.0', content)
+                                self.speed_controller.current_position = position
+                                self.display_label.config(text="Book loaded from saved position!")
+                                return
+                
+                # If no save file or user chose not to continue
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    self.text_input.delete('1.0', tk.END)
+                    self.text_input.insert('1.0', content)
+                    self.speed_controller.current_position = 0
+                    self.display_label.config(text="Book loaded successfully!")
+                    
+            except Exception as e:
+                self.display_label.config(text=f"Error loading file: {str(e)}")
+
+    def on_closing(self):
+        """Handle window closing event"""
+        try:
+            if self.current_file_path:
+                # Get current position and content
+                position = self.speed_controller.current_position
+                content = self.text_input.get('1.0', tk.END)
+                
+                # Create save data
+                save_data = {
+                    'position': position,
+                    'timestamp': str(time.time()),
+                    'file_path': self.current_file_path
+                }
+                
+                # Save to JSON file
+                save_file = self.saves_dir / f"{Path(self.current_file_path).stem}_save.json"
+                with open(save_file, 'w', encoding='utf-8') as f:
+                    json.dump(save_data, f, indent=4)
+                    
+        except Exception as e:
+            print(f"Error saving progress: {str(e)}")
+        
+        finally:
+            self.root.destroy()
 
 def main():
     root = tk.Tk()

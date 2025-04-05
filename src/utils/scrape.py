@@ -1,13 +1,16 @@
 import tkinter as tk
 from tkinter import ttk
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.common import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import undetected_chromedriver as uc
 import time
 import traceback
 import threading
+import sys
+import os
 
 def scrape_headway_book(email, password, book_url):
     """Scrape a book from Headway using provided credentials"""
@@ -18,23 +21,38 @@ def scrape_headway_book(email, password, book_url):
         button[class*="MuiButton-root"]:has(svg path[d^="M16.6141"])
     """
     
-    # Initialize variables for collecting text
-    all_summary_text = []
     driver = None
+    all_summary_text = []
     page_count = 1
     
     try:
-        # Configure Chrome options for headless mode
-        chrome_options = uc.ChromeOptions()
+        # Configure Chrome options
+        chrome_options = webdriver.ChromeOptions()
         chrome_options.add_argument('--headless=new')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--window-size=1920,1080')
 
-        # Initialize Chrome with headless options
-        print("Starting Chrome in headless mode...")
-        driver = uc.Chrome(options=chrome_options)
+        # Get ChromeDriver path
+        if getattr(sys, 'frozen', False):
+            # If running as compiled executable
+            chromedriver_path = os.path.join(sys._MEIPASS, 'chromedriver.exe')
+        else:
+            # If running from source
+            chromedriver_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                'drivers',
+                'chromedriver.exe'
+            )
+
+        if not os.path.exists(chromedriver_path):
+            raise Exception(f"ChromeDriver not found at: {chromedriver_path}")
+
+        # Initialize Chrome with local ChromeDriver
+        print(f"Starting Chrome with driver from: {chromedriver_path}")
+        service = Service(chromedriver_path)
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         driver.maximize_window()
 
         # Navigate to login page

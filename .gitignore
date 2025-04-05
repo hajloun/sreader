@@ -1,0 +1,27 @@
+# Ignore everything
+*
+*/*
+*/*/*
+
+# Don't ignore these specific files
+!src/
+!src/main.py
+!src/utils/
+!src/utils/text_processor.py
+!src/gui/
+!src/gui/window.py
+!src/controllers/
+!src/controllers/speed_controller.py
+!.gitignore
+!README.md
+
+# Still ignore these even if they would be included above
+*.pyc
+__pycache__/
+.env
+saves/
+books/
+drivers/
+dist/
+build/
+*.spec
